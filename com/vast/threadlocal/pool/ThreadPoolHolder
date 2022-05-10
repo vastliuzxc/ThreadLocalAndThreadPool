@@ -1,0 +1,140 @@
+package com.vast.threadlocal.pool;
+
+import com.vast.threadlocal.wrapper.ThreadLocalWrapper;
+
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+ /**
+ * <p>
+ * 公共线程池
+ * </p>
+ *
+ * @author l30008807
+ * @since 2022-05-10 09:50
+ */
+public class ThreadPoolHolder {
+    private static volatile ThreadPoolHolder instance;
+
+    private static ThreadPoolExecutor threadPool;
+
+    static {
+        BlockingQueue blockingQueue = new LinkedBlockingQueue();
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        threadPool = new ThreadPoolExecutor(availableProcessors, availableProcessors << 1, 0L, TimeUnit.MILLISECONDS,
+                blockingQueue);
+    }
+
+    private ThreadPoolHolder() {
+    }
+
+    /**
+     * 获取公共线程池实例
+     *
+     * @return instance
+     */
+    public static ThreadPoolHolder getInstance() {
+        if (instance == null) {
+            synchronized (ThreadPoolHolder.class) {
+                if (instance == null) {
+                    instance = new ThreadPoolHolder();
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * execute 默认清除线程缓存
+     *
+     * @param runnable runnable
+     */
+    public void execute(Runnable runnable) {
+        threadPool.execute(new ClearThreadLocalRunnable(runnable));
+    }
+
+    /**
+     * execute
+     *
+     * @param runnable runnable
+     * @param isClearThreadLocal 是否清除线程缓存
+     */
+    public void execute(Runnable runnable, boolean isClearThreadLocal) {
+        if (isClearThreadLocal) {
+            threadPool.execute(new ClearThreadLocalRunnable(runnable));
+        } else {
+            threadPool.execute(runnable);
+        }
+    }
+
+    /**
+     * submit 默认清除线程缓存
+     *
+     * @param task task
+     * @return <T>Future<T> <T>Future<T>
+     */
+    public <T> Future<T> submit(Callable<T> task) {
+        return threadPool.submit(new ClearThreadLocalCallable<T>(task));
+    }
+
+    /**
+     * submit
+     *
+     * @param task task
+     * @param isClearThreadLocal 是否清除线程缓存
+     * @return <T>Future<T> <T>Future<T>
+     */
+    public <T> Future<T> submit(Callable<T> task, boolean isClearThreadLocal) {
+        if (isClearThreadLocal) {
+            return threadPool.submit(new ClearThreadLocalCallable<T>(task));
+        } else {
+            return threadPool.submit(task);
+        }
+    }
+
+    /**
+     * 具备清除线程缓存能力的runnable
+     * ThreadLocal使用的是自定义的 ThreadLocalWrapper
+     * 也可以使用自定义的线程池的 afterExecute函数完成
+     *
+     */
+    private static class ClearThreadLocalRunnable implements Runnable {
+        private Runnable runnable;
+
+        public ClearThreadLocalRunnable(Runnable runnable) {
+            this.runnable = runnable;
+        }
+
+        @Override
+        public void run() {
+            runnable.run();
+            ThreadLocalWrapper.clear();
+        }
+    }
+
+    /**
+     * 具备清除线程缓存能力的Callable
+     * ThreadLocal使用的是自定义的 ThreadLocalWrapper
+     * 也可以使用自定义的线程池的 afterExecute函数完成
+     *
+     */
+    private static class ClearThreadLocalCallable<T> implements Callable<T> {
+        private Callable<T> callable;
+
+        public ClearThreadLocalCallable(Callable<T> callable) {
+            this.callable = callable;
+        }
+
+        @Override
+        public T call() throws Exception {
+            T t = callable.call();
+            ThreadLocalWrapper.clear();
+            return t;
+        }
+    }
